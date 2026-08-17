@@ -279,13 +279,6 @@ footer{border-top:1px solid var(--lm-border);padding:26px 0 46px;
         distribution. Service-only and body-shop locations are excluded.</p>
     </section>
 
-    <section id="s4">
-      <div class="sec-no">05</div>
-      <h2>Our <b>Plan</b></h2>
-      <div class="lead">Taoyuan — phased regional network</div>
-      <div id="plan-recap"></div>
-    </section>
-
     <details id="sources"><summary>Sources</summary><div id="src-body"></div></details>
 
     <footer>
@@ -840,20 +833,6 @@ function setView4(v){
     bh.appendChild(row);
   });
   setView4('showroom');
-})();
-
-/* ===================== 05 結論 ===================== */
-(function(){
-  const h=$('#plan-recap');
-  PHASES.forEach((p,i)=>{
-    const d=document.createElement('div');
-    d.className='pcard'+(i?' two':'')+' on'; d.style.cursor='default';
-    d.innerHTML=`<div class="pc-num">${p.num}</div>
-      <div class="pc-name">${p.name}</div>
-      <div class="pc-desc">${p.desc}</div>
-      <div class="pc-dist">${p.districts.join(' &middot; ')}</div>`;
-    h.appendChild(d);
-  });
 })();
 
 /* ===================== Sources ===================== */
