@@ -333,7 +333,7 @@ kbd{font-family:inherit;font-size:12px;border:1px solid var(--lm-border);padding
     <!-- MODE 3 -->
     <section class="mode" id="m3">
       <div class="titleblock" id="m3title">
-        <div class="eyebrow">Section 03</div>
+        <div class="eyebrow">Section 04</div>
         <!-- 進入本 section 時會由 renderDealer() 依品牌覆寫 -->
         <h1 id="m3h1">TOYOTA<br><b>DEALER NETWORK</b></h1>
         <div class="sub" id="m3sub">Selected Automotive Market Examples</div>
@@ -347,7 +347,7 @@ kbd{font-family:inherit;font-size:12px;border:1px solid var(--lm-border);padding
     <!-- MODE 4 -->
     <section class="mode" id="m4">
       <div class="titleblock" id="m4title">
-        <div class="eyebrow">Section 04</div>
+        <div class="eyebrow">Section 03</div>
         <h1 id="m4h1">TAOYUAN AUTOMOTIVE<br><b>MARKET LANDSCAPE</b></h1>
         <div class="sub" id="m4sub">Major Brand Showrooms &amp; Population Distribution</div>
       </div>
@@ -1537,19 +1537,25 @@ function setView4(v){
    9. 導覽
    ========================================================================= */
 let MODE = 0;   // 0 = 尚未進入任何 section，讓啟動時的 go(1) 能正常執行
+
+// n 為內部 section 代號，對應 DOM 的 #m1..#m4，不隨播放順序改變
+//（既有互動判斷如「MODE !== 3 才是 Dealer Network」因此維持有效）。
+// SECTIONS 的陣列順序 = 簡報播放順序；畫面上顯示的編號由陣列位置決定。
 const SECTIONS = [
   { n:1, label:'Taiwan Overview' },
   { n:2, label:'Taoyuan Plan' },
-  { n:3, label:'Dealer Network' },
-  { n:4, label:'Market Landscape' }
+  { n:4, label:'Market Landscape' },
+  { n:3, label:'Dealer Network' }
 ];
+const ORDER = SECTIONS.map(s => s.n);                 // 位置(0-based) → 內部代號
+const POS = {}; ORDER.forEach((n, i) => POS[n] = i);  // 內部代號 → 位置
 const LAST_SECTION = SECTIONS.length;
 (function(){
   const nav = $('#nav');
-  SECTIONS.forEach(s => {
+  SECTIONS.forEach((s, i) => {
     const b = document.createElement('button');
     b.className = 'navitem'; b.dataset.n = s.n;
-    b.innerHTML = `<span class="idx">0${s.n}</span><span class="lbl">${s.label}</span>`;
+    b.innerHTML = `<span class="idx">0${i + 1}</span><span class="lbl">${s.label}</span>`;
     b.addEventListener('click', () => go(s.n));
     nav.appendChild(b);
   });
@@ -1616,12 +1622,15 @@ const KEY_NEXT = ['ArrowRight','ArrowDown','PageDown'];
 document.addEventListener('keydown', e => {
   if (KEY_PREV.includes(e.key) || KEY_NEXT.includes(e.key) || e.key === ' '){
     e.preventDefault();
-    if (KEY_PREV.includes(e.key)) go(MODE === 1 ? LAST_SECTION : MODE - 1);
-    else                          go(MODE === LAST_SECTION ? 1 : MODE + 1);
+    const cur = POS[MODE] != null ? POS[MODE] : 0;    // 依播放順序前後移動，非依內部代號
+    const next = KEY_PREV.includes(e.key)
+      ? (cur + LAST_SECTION - 1) % LAST_SECTION
+      : (cur + 1) % LAST_SECTION;
+    go(ORDER[next]);
     return;
   }
   if (e.key === 'Escape'){ $('#sources').classList.remove('on'); $('#srcbtn').classList.remove('on'); go(1); }
-  else if (e.key >= '1' && e.key <= String(LAST_SECTION)) go(+e.key);
+  else if (e.key >= '1' && e.key <= String(LAST_SECTION)) go(ORDER[+e.key - 1]);
 });
 
 /* =========================================================================
