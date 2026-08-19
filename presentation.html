@@ -421,6 +421,8 @@ const PHASES = [
     color:'#894D94',
     fill:'rgba(137,77,148,0.16)', fillHover:'rgba(137,77,148,0.28)',
     dash:'none', sw:1.8, swHover:2.5, so:.95, soHover:1,
+    // anchorAt 若指定則直接採用；此點取自蘆竹區與桃園區的實際共用邊界
+    anchorAt:[121.2869, 25.0287],
     districts:['Taoyuan','Guishan','Bade','Daxi','Luzhu','Dayuan'] },
   // Phase 02 改用 logo 漸層藍：與 Phase 01 的紫為不同色相，投影時一眼可分
   { key:'p2', num:'PHASE 02', name:'Southern Taoyuan',
@@ -747,6 +749,7 @@ const phaseOf = {}; PHASES.forEach(p => p.districts.forEach(d => phaseOf[d] = p)
 // 若落點不在任一該期行政區內，退回距離最近的行政區質心。
 // 純視覺定位，不代表任何實際據點。
 function phaseAnchor(p){
+  if (p.anchorAt) return p.anchorAt;              // 指定座標優先
   const ds = p.districts.map(n => GEO_TAOYUAN.find(x => x.en === n)).filter(Boolean);
   const w = d => (TY_POP && TY_POP[d.en] ? TY_POP[d.en].population : 1);
   const tw = ds.reduce((s,d) => s + w(d), 0);
