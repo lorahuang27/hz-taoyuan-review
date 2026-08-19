@@ -741,13 +741,42 @@ const TY_BOX = { x:0, y:0, w:1090, h:862, pad:16 };
 const projTY = fitProjection(GEO_TAOYUAN, TY_BOX);
 const phaseOf = {}; PHASES.forEach(p => p.districts.forEach(d => phaseOf[d] = p));
 
+// 分區 anchor：以人口加權的行政區質心作為該期的視覺重心。
+// 用人口而非單純平均，是因為單純平均會被面積大、人口少的區（如楊梅、新屋、觀音）
+// 拉到最西側，引線得橫貫整張地圖；加權後 anchor 會落在該期的市場重心。
+// 若落點不在任一該期行政區內，退回距離最近的行政區質心。
+// 純視覺定位，不代表任何實際據點。
+function phaseAnchor(p){
+  const ds = p.districts.map(n => GEO_TAOYUAN.find(x => x.en === n)).filter(Boolean);
+  const w = d => (TY_POP && TY_POP[d.en] ? TY_POP[d.en].population : 1);
+  const tw = ds.reduce((s,d) => s + w(d), 0);
+  const m = [ ds.reduce((s,d) => s + d.c[0] * w(d), 0) / tw,
+              ds.reduce((s,d) => s + d.c[1] * w(d), 0) / tw ];
+  const inside = ds.some(d => {
+    let ins = false;
+    eachRing(d.geometry, r => {
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++){
+        const xi = r[i][0], yi = r[i][1], xj = r[j][0], yj = r[j][1];
+        if ((yi > m[1]) !== (yj > m[1]) && m[0] < (xj-xi)*(m[1]-yi)/(yj-yi)+xi) ins = !ins;
+      }
+    });
+    return ins;
+  });
+  if (inside) return m;
+  ds.sort((a,b) => Math.hypot(a.c[0]-m[0], a.c[1]-m[1]) - Math.hypot(b.c[0]-m[0], b.c[1]-m[1]));
+  return ds[0].c;
+}
+
 const TYM = (function(){
   const host = $('#m2map');
   const svg = el('svg', { width:1130, height:862, viewBox:'0 0 1130 862' });
   svg.style.left = '300px'; svg.style.top = '62px';   // 右移讓開左側標題區
   const gRoot = el('g'); svg.appendChild(gRoot);
-  const gFill = el('g'), gPhase = el('g'), gHalo = el('g'), gLbl = el('g'), gTag = el('g'), gApt = el('g');
-  [gFill, gPhase, gHalo, gLbl, gTag, gApt].forEach(g => gRoot.appendChild(g));
+  // gLead 在 gLbl 之下：引線從行政區名稱後方通過，文字維持清晰；
+  // gTag（anchor marker）則在標籤之上，確保 anchor 不被文字蓋住。
+  const gFill = el('g'), gPhase = el('g'), gHalo = el('g'), gLead = el('g'),
+        gLbl = el('g'), gTag = el('g'), gApt = el('g');
+  [gFill, gPhase, gHalo, gLead, gLbl, gTag, gApt].forEach(g => gRoot.appendChild(g));
 
   const paths = {}, labels = {};
   GEO_TAOYUAN.forEach(d => {
@@ -786,28 +815,64 @@ const TYM = (function(){
     phaseG[p.key] = { fill:gf, halo:gh, fills, halos, cfg:p };
   });
 
-  // 期別標記（放在群組質心附近）
-  const tagAt = { p1:[121.335,25.105], p2:[121.055,24.845] };
+  // 每一期在其分區內放一個 anchor marker，並拉引線連到右側對應的階段卡片。
+  // 原本地圖上的浮動 PHASE 文字已移除 —— 引線指向的卡片已載明同樣資訊，
+  // 保留兩套會在同一張圖出現重複的期別標示。
   PHASES.forEach(p => {
-    const q = projTY(tagAt[p.key][0], tagAt[p.key][1]);
-    const g = el('g', { class:'phase-tag', opacity:0 });
-    const ln = el('line', { x1:q[0], y1:q[1]-7, x2:q[0], y2:q[1]+33,
-      stroke:p.color, 'stroke-width':1.5 });
-    ln.style.transition = 'stroke-width .28s ease';
-    const a = el('text', { class:'pt-num', x:q[0]+13, y:q[1]+4, fill:p.color });
-    a.textContent = p.num;
-    const b = el('text', { class:'pt-name', x:q[0]+13, y:q[1]+27, fill:'#1D1D1D' });
-    b.textContent = p.name.toUpperCase();
-    b.style.transition = 'fill .28s ease';
-    g.appendChild(ln); g.appendChild(a); g.appendChild(b);
-    gTag.appendChild(g);
-    Object.assign(phaseG[p.key], { tag:g, tagLine:ln, tagName:b });
+    const a = phaseAnchor(p);                      // [lng, lat]
+    const q = projTY(a[0], a[1]);
+    const lg = el('g', { class:'phase-tag', opacity:0 });     // 引線層（標籤之下）
+    const g  = el('g', { class:'phase-tag', opacity:0 });     // anchor 層（標籤之上）
+    const leader = el('path', { class:'ph-leader', fill:'none', stroke:p.color,
+      'stroke-width':1.4, 'stroke-opacity':.85, 'stroke-linecap':'round',
+      'stroke-linejoin':'round' });
+    leader.style.transition = 'stroke-width .28s ease';
+    const ring = el('circle', { cx:q[0].toFixed(1), cy:q[1].toFixed(1), r:12,
+      fill:'none', stroke:p.color, 'stroke-opacity':.45, 'stroke-width':1.2 });
+    ring.style.transition = 'r .28s ease';
+    const dot = el('circle', { cx:q[0].toFixed(1), cy:q[1].toFixed(1), r:5.5, fill:p.color });
+    lg.appendChild(leader);
+    g.appendChild(ring); g.appendChild(dot);
+    gLead.appendChild(lg); gTag.appendChild(g);
+    Object.assign(phaseG[p.key], { tag:g, tagParts:[lg, g], leader, ring, anchor:q });
   });
 
   airportMark(gApt, projTY, { side:'left', len:56 });
   host.appendChild(svg);
   return { svg, gRoot, paths, labels, phaseG };
 })();
+
+// 把 anchor marker 與右側階段卡片連起來。
+// 桃園 SVG 位於 stage 的 (300, 62) 且 overflow 可見，因此引線可直接畫到面板邊緣，
+// 只需把面板的 stage 座標換算成 SVG 座標。
+const TY_SVG_ORIGIN = [300, 62];
+function layoutPhaseLeaders(panelSel){
+  const panel = $(panelSel); if (!panel) return;
+  const st = $('#stage').getBoundingClientRect();
+  const k = st.width / 1920;
+  const toStage = e => { const r = e.getBoundingClientRect();
+    return { x:(r.x-st.x)/k, y:(r.y-st.y)/k, w:r.width/k, h:r.height/k }; };
+  const pb = toStage(panel);
+
+  PHASES.forEach(p => {
+    const g = TYM.phaseG[p.key];
+    const card = panel.querySelector(`.phase[data-ph="${p.key}"]`);
+    if (!card || !g.leader) return;
+    const name = card.querySelector('.ph-name') || card;
+    const nb = toStage(name);
+
+    const a  = g.anchor;                                   // SVG 座標
+    const tx = pb.x - 10 - TY_SVG_ORIGIN[0];               // 終點：卡片左側色條外緣
+    const ty = nb.y + nb.h / 2 - TY_SVG_ORIGIN[1];
+    const p1 = a[0] + 34;                                  // 由 anchor 平順帶出
+    const ex = tx - 26;
+    const cx = (p1 + ex) / 2;
+    g.leader.setAttribute('d',
+      `M${a[0].toFixed(1)},${a[1].toFixed(1)} H${p1.toFixed(1)} ` +
+      `C${cx.toFixed(1)},${a[1].toFixed(1)} ${cx.toFixed(1)},${ty.toFixed(1)} ` +
+      `${ex.toFixed(1)},${ty.toFixed(1)} H${tx.toFixed(1)}`);
+  });
+}
 
 const PHASE_OP = { p1:1, p2:.85 };  // Phase 02 整體再降一階，確保層級明確
 const phaseShown = { p1:false, p2:false };
@@ -816,7 +881,8 @@ function setPhaseVisible(key, on){
   phaseShown[key] = on;
   const g = TYM.phaseG[key];
   const v = on ? PHASE_OP[key] : 0;
-  g.fill.setAttribute('opacity', v); g.halo.setAttribute('opacity', v); g.tag.setAttribute('opacity', v);
+  g.fill.setAttribute('opacity', v); g.halo.setAttribute('opacity', v);
+  g.tagParts.forEach(n => n.setAttribute('opacity', v));   // 引線層＋anchor 層
   PHASES.find(p => p.key===key).districts.forEach(d => {
     if (TYM.labels[d]) TYM.labels[d].classList.toggle('inphase', on);
   });
@@ -837,13 +903,14 @@ function focusPhase(key){
       h.setAttribute('stroke-width', hot ? p.swHover : p.sw);
       h.setAttribute('stroke-opacity', hot ? p.soHover : p.so);
     });
-    g.tagLine.setAttribute('stroke-width', hot ? 2.6 : 1.5);
-    g.tagName.setAttribute('fill', hot ? p.color : '#1D1D1D');
+    g.leader.setAttribute('stroke-width', hot ? 2.3 : 1.4);
+    g.leader.setAttribute('stroke-opacity', hot ? 1 : .85);
+    g.ring.setAttribute('r', hot ? 16 : 12);
     // 退後的一期保留 45% 而非壓到近乎消失，確保 Phase 01 在任何狀態都還讀得到
     const base = PHASE_OP[p.key];
     g.fill.setAttribute('opacity', off ? base * .45 : base);
     g.halo.setAttribute('opacity', off ? base * .45 : base);
-    g.tag .setAttribute('opacity', off ? base * .4  : base);
+    g.tagParts.forEach(n => n.setAttribute('opacity', off ? base * .4 : base));
   });
   // 右側 PHASE 區塊同步 highlight
   document.querySelectorAll('#m2panel .phase, #m3panel .phase').forEach(n => {
@@ -1197,6 +1264,7 @@ function showPlanPanel(){
   h.innerHTML = html;
   h.style.opacity = 1;
   bindPhaseHover(h);
+  layoutPhaseLeaders('#m3panel');     // 引線終點對齊剛建好的卡片
 }
 
 /* =========================================================================
@@ -1583,6 +1651,7 @@ function go(n, zoomFromTaiwan){
     $('#footnote').textContent = 'Northern / Southern Taoyuan are network-planning groupings, not official administrative divisions.';
     setPhaseVisible('p1', false); setPhaseVisible('p2', false);
     $('#m2').classList.add('on');
+    layoutPhaseLeaders('#m2panel');
     if (zoomFromTaiwan){
       // Taiwan 淡出並朝桃園放大 → 桃園圖淡入
       const q = TW.proj(121.2587, 24.9021);
